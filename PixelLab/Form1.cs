@@ -5,7 +5,6 @@ using System.Windows.Forms;
 using Emgu.CV;
 using Emgu.CV.CvEnum;
 using Emgu.CV.Structure;
-using Emgu.CV.Util;
 
 namespace PixelLab
 {
@@ -14,10 +13,11 @@ namespace PixelLab
         private Mat originalMat;
         private Bitmap currentBitmap;
         private PictureBox pictureBox1;
+        private Label infoLabel;
+        private string currentFilePath;
 
         public Form1()
         {
-            // Create the PictureBox and set up the form
             InitializeForm();
             SetupDragDrop();
             CreateColorSpaceButtons();
@@ -31,6 +31,22 @@ namespace PixelLab
             pictureBox1.SizeMode = PictureBoxSizeMode.Zoom;
             pictureBox1.BackColor = Color.LightGray;
             this.Controls.Add(pictureBox1);
+
+            // Create info panel (bottom)
+            Panel infoPanel = new Panel();
+            infoPanel.Dock = DockStyle.Bottom;
+            infoPanel.Height = 60;
+            infoPanel.BackColor = Color.WhiteSmoke;
+            infoPanel.Padding = new Padding(10);
+
+            infoLabel = new Label();
+            infoLabel.Dock = DockStyle.Fill;
+            infoLabel.Text = "No image loaded";
+            infoLabel.Font = new Font("Segoe UI", 9F);
+            infoLabel.ForeColor = Color.DarkGray;
+            infoPanel.Controls.Add(infoLabel);
+
+            this.Controls.Add(infoPanel);
 
             // Form properties
             this.Text = "PixelLab";
@@ -64,15 +80,35 @@ namespace PixelLab
         {
             try
             {
+                currentFilePath = filePath;
                 currentBitmap = new Bitmap(filePath);
                 originalMat = currentBitmap.ToMat();
                 pictureBox1.Image = currentBitmap;
                 this.Text = $"PixelLab - {Path.GetFileName(filePath)}";
+                UpdateImageInfo();
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Error loading image:\n{ex.Message}", "PixelLab", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private void UpdateImageInfo()
+        {
+            if (currentFilePath == null) return;
+
+            FileInfo fi = new FileInfo(currentFilePath);
+            long fileSizeBytes = fi.Length;
+            string fileSizeStr = fileSizeBytes >= 1048576
+                ? $"{fileSizeBytes / 1048576.0:F2} MB"
+                : $"{fileSizeBytes / 1024.0:F2} KB";
+
+            string info = $"📄 {Path.GetFileName(currentFilePath)}  |  " +
+                          $"📏 {currentBitmap.Width} × {currentBitmap.Height} px  |  " +
+                          $"💾 {fileSizeStr}  |  " +
+                          $"🔖 {Path.GetExtension(currentFilePath).ToUpper()}";
+            infoLabel.Text = info;
+            infoLabel.ForeColor = Color.Black;
         }
 
         private void CreateColorSpaceButtons()
@@ -142,9 +178,9 @@ namespace PixelLab
             }
         }
 
+        // CMYK simulation (duller print look)
         private Mat ConvertRgbToCmyk(Mat bgrMat)
         {
-            // Convert Mat to Image<Bgr, byte> for pixel access
             using (Image<Bgr, byte> img = bgrMat.ToImage<Bgr, byte>())
             {
                 int width = img.Width;
@@ -160,7 +196,6 @@ namespace PixelLab
                         double g = color.Green / 255.0;
                         double b = color.Blue / 255.0;
 
-                        // Convert RGB to CMYK (standard formula)
                         double k = 1 - Math.Max(Math.Max(r, g), b);
                         if (k == 1.0)
                         {
@@ -171,30 +206,22 @@ namespace PixelLab
                         double m = (1 - g - k) / (1 - k);
                         double y_ = (1 - b - k) / (1 - k);
 
-                        // Simulate printed colors: convert CMYK back to RGB
-                        // but apply a desaturation and darkening effect.
                         double rOut = (1 - c) * (1 - k);
                         double gOut = (1 - m) * (1 - k);
                         double bOut = (1 - y_) * (1 - k);
 
-                        // ----- Simulation of dull printed look -----
-                        // 1. Darken by K (more black = darker)
+                        // Simulate printed look: darken + desaturate
                         double darken = 1 - (k * 0.3);
                         rOut *= darken;
                         gOut *= darken;
                         bOut *= darken;
 
-                        // 2. Desaturate by moving toward gray
                         double gray = (rOut + gOut + bOut) / 3.0;
-                        double desaturate = 0.65; // 65% saturation, 35% gray
+                        double desaturate = 0.65;
                         rOut = rOut * desaturate + gray * (1 - desaturate);
                         gOut = gOut * desaturate + gray * (1 - desaturate);
                         bOut = bOut * desaturate + gray * (1 - desaturate);
 
-                        // 3. Optional: slight cyan cast (common in prints)
-                        // bOut = bOut * 0.95;   // uncomment if needed
-
-                        // Clamp and convert to 0-255
                         byte rr = (byte)(Math.Max(0, Math.Min(1, rOut)) * 255);
                         byte gg = (byte)(Math.Max(0, Math.Min(1, gOut)) * 255);
                         byte bb = (byte)(Math.Max(0, Math.Min(1, bOut)) * 255);
