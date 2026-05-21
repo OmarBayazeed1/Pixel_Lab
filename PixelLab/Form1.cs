@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Windows.Forms;
 using Emgu.CV;
@@ -20,19 +21,19 @@ namespace PixelLab
         {
             InitializeForm();
             SetupDragDrop();
-            CreateColorSpaceButtons();
+            CreateTopPanel(); // Now includes Save button
         }
 
         private void InitializeForm()
         {
-            // Create PictureBox
+            // PictureBox
             pictureBox1 = new PictureBox();
             pictureBox1.Dock = DockStyle.Fill;
             pictureBox1.SizeMode = PictureBoxSizeMode.Zoom;
             pictureBox1.BackColor = Color.LightGray;
             this.Controls.Add(pictureBox1);
 
-            // Create info panel (bottom)
+            // Info panel at bottom
             Panel infoPanel = new Panel();
             infoPanel.Dock = DockStyle.Bottom;
             infoPanel.Height = 60;
@@ -45,10 +46,8 @@ namespace PixelLab
             infoLabel.Font = new Font("Segoe UI", 9F);
             infoLabel.ForeColor = Color.DarkGray;
             infoPanel.Controls.Add(infoLabel);
-
             this.Controls.Add(infoPanel);
 
-            // Form properties
             this.Text = "PixelLab";
             this.WindowState = FormWindowState.Maximized;
         }
@@ -111,7 +110,7 @@ namespace PixelLab
             infoLabel.ForeColor = Color.Black;
         }
 
-        private void CreateColorSpaceButtons()
+        private void CreateTopPanel()
         {
             FlowLayoutPanel panel = new FlowLayoutPanel();
             panel.Dock = DockStyle.Top;
@@ -119,7 +118,9 @@ namespace PixelLab
             panel.FlowDirection = FlowDirection.LeftToRight;
             panel.BackColor = Color.WhiteSmoke;
             panel.AutoSize = false;
+            panel.Padding = new Padding(5);
 
+            // Color space buttons
             string[] colorSpaces = { "RGB", "HSV", "YUV", "LAB", "YCbCr", "CMYK" };
             foreach (string cs in colorSpaces)
             {
@@ -132,7 +133,69 @@ namespace PixelLab
                 panel.Controls.Add(btn);
             }
 
+            // Save button (separator)
+            Label sep = new Label();
+            sep.Text = "     ";
+            panel.Controls.Add(sep);
+
+            Button saveBtn = new Button();
+            saveBtn.Text = "💾 Save Image";
+            saveBtn.Width = 100;
+            saveBtn.Height = 40;
+            saveBtn.Margin = new Padding(5);
+            saveBtn.BackColor = Color.LightGreen;
+            saveBtn.Click += SaveImage;
+            panel.Controls.Add(saveBtn);
+
             this.Controls.Add(panel);
+        }
+
+        private void SaveImage(object sender, EventArgs e)
+        {
+            if (currentBitmap == null)
+            {
+                MessageBox.Show("No image to save. Please load an image first.", "PixelLab", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            using (SaveFileDialog sfd = new SaveFileDialog())
+            {
+                sfd.Filter = "PNG Image|*.png|JPEG Image|*.jpg;*.jpeg|BMP Image|*.bmp|GIF Image|*.gif";
+                sfd.Title = "Save Image As";
+                sfd.FileName = currentFilePath != null ? Path.GetFileNameWithoutExtension(currentFilePath) : "untitled";
+
+                if (sfd.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        ImageFormat format = ImageFormat.Png;
+                        string ext = Path.GetExtension(sfd.FileName).ToLower();
+                        switch (ext)
+                        {
+                            case ".jpg":
+                            case ".jpeg":
+                                format = ImageFormat.Jpeg;
+                                break;
+                            case ".bmp":
+                                format = ImageFormat.Bmp;
+                                break;
+                            case ".gif":
+                                format = ImageFormat.Gif;
+                                break;
+                            default:
+                                format = ImageFormat.Png;
+                                break;
+                        }
+
+                        currentBitmap.Save(sfd.FileName, format);
+                        MessageBox.Show($"Image saved successfully to:\n{sfd.FileName}", "PixelLab", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Save failed: {ex.Message}", "PixelLab", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+            }
         }
 
         private void ConvertToColorSpace(string targetSpace)
@@ -170,7 +233,7 @@ namespace PixelLab
 
                 currentBitmap = resultMat.ToBitmap();
                 pictureBox1.Image = currentBitmap;
-                this.Text = $"PixelLab - Converted to {targetSpace}";
+                this.Text = $"PixelLab - {Path.GetFileName(currentFilePath)} [{targetSpace}]";
             }
             catch (Exception ex)
             {
@@ -210,7 +273,6 @@ namespace PixelLab
                         double gOut = (1 - m) * (1 - k);
                         double bOut = (1 - y_) * (1 - k);
 
-                        // Simulate printed look: darken + desaturate
                         double darken = 1 - (k * 0.3);
                         rOut *= darken;
                         gOut *= darken;
