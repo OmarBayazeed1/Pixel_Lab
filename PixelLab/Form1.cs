@@ -144,66 +144,65 @@ namespace PixelLab
 
         private Mat ConvertRgbToCmyk(Mat bgrMat)
         {
-            Mat rgbFloat = new Mat();
-            bgrMat.ConvertTo(rgbFloat, DepthType.Cv32F, 1.0 / 255.0);
-            CvInvoke.CvtColor(rgbFloat, rgbFloat, ColorConversion.Bgr2Rgb);
-
-            Mat[] channels = rgbFloat.Split();
-            Mat R = channels[0];
-            Mat G = channels[1];
-            Mat B = channels[2];
-
-            Mat ones = new Mat(rgbFloat.Size, DepthType.Cv32F, 1);
-            ones.SetTo(new MCvScalar(1.0));
-
-            Mat maxRG = new Mat();
-            Mat maxAll = new Mat();
-            CvInvoke.Max(R, G, maxRG);
-            CvInvoke.Max(maxRG, B, maxAll);
-            Mat K = new Mat();
-            CvInvoke.Subtract(ones, maxAll, K);
-
-            Mat oneMinusK = new Mat();
-            CvInvoke.Subtract(ones, K, oneMinusK);
-
-            Mat tmp = new Mat();
-
-            Mat C = new Mat();
-            CvInvoke.Subtract(ones, R, tmp);
-            CvInvoke.Subtract(tmp, K, tmp);
-            CvInvoke.Divide(tmp, oneMinusK, C);
-
-            Mat M = new Mat();
-            CvInvoke.Subtract(ones, G, tmp);
-            CvInvoke.Subtract(tmp, K, tmp);
-            CvInvoke.Divide(tmp, oneMinusK, M);
-
-            Mat Y = new Mat();
-            CvInvoke.Subtract(ones, B, tmp);
-            CvInvoke.Subtract(tmp, K, tmp);
-            CvInvoke.Divide(tmp, oneMinusK, Y);
-
-            Mat oneMinusC = new Mat();
-            Mat oneMinusM = new Mat();
-            Mat oneMinusY = new Mat();
-            CvInvoke.Subtract(ones, C, oneMinusC);
-            CvInvoke.Subtract(ones, M, oneMinusM);
-            CvInvoke.Subtract(ones, Y, oneMinusY);
-
-            Mat newR = new Mat();
-            Mat newG = new Mat();
-            Mat newB = new Mat();
-            CvInvoke.Multiply(oneMinusC, oneMinusK, newR);
-            CvInvoke.Multiply(oneMinusM, oneMinusK, newG);
-            CvInvoke.Multiply(oneMinusY, oneMinusK, newB);
-
-            using (VectorOfMat vec = new VectorOfMat(newR, newG, newB))
+            // Convert Mat to Image<Bgr, byte> for pixel access
+            using (Image<Bgr, byte> img = bgrMat.ToImage<Bgr, byte>())
             {
-                Mat result = new Mat();
-                CvInvoke.Merge(vec, result);
-                result.ConvertTo(result, DepthType.Cv8U, 255.0);
-                CvInvoke.CvtColor(result, result, ColorConversion.Rgb2Bgr);
-                return result;
+                int width = img.Width;
+                int height = img.Height;
+                Image<Bgr, byte> resultImg = new Image<Bgr, byte>(width, height);
+
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        Bgr color = img[y, x];
+                        double r = color.Red / 255.0;
+                        double g = color.Green / 255.0;
+                        double b = color.Blue / 255.0;
+
+                        // Convert RGB to CMYK (standard formula)
+                        double k = 1 - Math.Max(Math.Max(r, g), b);
+                        if (k == 1.0)
+                        {
+                            resultImg[y, x] = new Bgr(0, 0, 0);
+                            continue;
+                        }
+                        double c = (1 - r - k) / (1 - k);
+                        double m = (1 - g - k) / (1 - k);
+                        double y_ = (1 - b - k) / (1 - k);
+
+                        // Simulate printed colors: convert CMYK back to RGB
+                        // but apply a desaturation and darkening effect.
+                        double rOut = (1 - c) * (1 - k);
+                        double gOut = (1 - m) * (1 - k);
+                        double bOut = (1 - y_) * (1 - k);
+
+                        // ----- Simulation of dull printed look -----
+                        // 1. Darken by K (more black = darker)
+                        double darken = 1 - (k * 0.3);
+                        rOut *= darken;
+                        gOut *= darken;
+                        bOut *= darken;
+
+                        // 2. Desaturate by moving toward gray
+                        double gray = (rOut + gOut + bOut) / 3.0;
+                        double desaturate = 0.65; // 65% saturation, 35% gray
+                        rOut = rOut * desaturate + gray * (1 - desaturate);
+                        gOut = gOut * desaturate + gray * (1 - desaturate);
+                        bOut = bOut * desaturate + gray * (1 - desaturate);
+
+                        // 3. Optional: slight cyan cast (common in prints)
+                        // bOut = bOut * 0.95;   // uncomment if needed
+
+                        // Clamp and convert to 0-255
+                        byte rr = (byte)(Math.Max(0, Math.Min(1, rOut)) * 255);
+                        byte gg = (byte)(Math.Max(0, Math.Min(1, gOut)) * 255);
+                        byte bb = (byte)(Math.Max(0, Math.Min(1, bOut)) * 255);
+
+                        resultImg[y, x] = new Bgr(bb, gg, rr);
+                    }
+                }
+                return resultImg.Mat;
             }
         }
     }
