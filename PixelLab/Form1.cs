@@ -6,7 +6,7 @@ using Emgu.CV;
 using Emgu.CV.CvEnum;
 using Emgu.CV.Structure;
 using Emgu.CV.Util;
-
+using System.Runtime.InteropServices;
 namespace PixelLab
 {
     public partial class Form1 : Form
@@ -65,13 +65,15 @@ namespace PixelLab
         {
             this.AllowDrop = true;
             this.DragEnter += (s, e) => { if (e.Data.GetDataPresent(DataFormats.FileDrop)) e.Effect = DragDropEffects.Copy; };
-            this.DragDrop += (s, e) => {
+            this.DragDrop += (s, e) =>
+            {
                 string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
                 if (files != null && files.Length > 0) LoadImage(files[0]);
             };
             pictureBox1.AllowDrop = true;
             pictureBox1.DragEnter += (s, e) => { if (e.Data.GetDataPresent(DataFormats.FileDrop)) e.Effect = DragDropEffects.Copy; };
-            pictureBox1.DragDrop += (s, e) => {
+            pictureBox1.DragDrop += (s, e) =>
+            {
                 string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
                 if (files != null && files.Length > 0) LoadImage(files[0]);
             };
@@ -127,6 +129,13 @@ namespace PixelLab
                 btn.Click += (s, e) => ConvertToColorSpace(cs);
                 topPanel.Controls.Add(btn);
             }
+            Button openBtn = new Button();
+            openBtn.Text = "📂 Open";
+            openBtn.Width = 80;
+            openBtn.Height = 40;
+            openBtn.BackColor = Color.LightGray;
+            openBtn.Click += (s, e) => OpenImage();
+            topPanel.Controls.Add(openBtn);
 
             Button saveBtn = new Button();
             saveBtn.Text = "💾 Save";
@@ -143,6 +152,14 @@ namespace PixelLab
             resetBtn.BackColor = Color.LightCoral;
             resetBtn.Click += (s, e) => ResetToOriginal();
             topPanel.Controls.Add(resetBtn);
+
+            Button quantizeBtn = new Button();
+            quantizeBtn.Text = "🎨 Quantize";
+            quantizeBtn.Width = 80;
+            quantizeBtn.Height = 40;
+            quantizeBtn.BackColor = Color.LightBlue;
+            quantizeBtn.Click += (s, e) => QuantizeImage();
+            topPanel.Controls.Add(quantizeBtn);
 
             this.Controls.Add(topPanel);
         }
@@ -672,7 +689,8 @@ namespace PixelLab
             resetChannelsBtn.Dock = DockStyle.Top;
             resetChannelsBtn.Height = 40;
             resetChannelsBtn.Margin = new Padding(0, 10, 0, 0);
-            resetChannelsBtn.Click += (s, e) => {
+            resetChannelsBtn.Click += (s, e) =>
+            {
                 for (int i = 0; i < 4; i++)
                 {
                     trackBars[i].Value = 100;
@@ -748,6 +766,210 @@ namespace PixelLab
             }
         }
 
+        private void QuantizeImage()
+        {
+            if (currentMat == null || currentMat.IsEmpty)
+            {
+                MessageBox.Show("No image loaded.", "PixelLab");
+                return;
+            }
+
+            using (Form dialog = new Form())
+            {
+                dialog.Text = "Color Quantization";
+                dialog.Width = 300;
+                dialog.Height = 150;
+                dialog.StartPosition = FormStartPosition.CenterParent;
+
+                Label lbl = new Label();
+                lbl.Text = "Number of colors:";
+                lbl.Location = new Point(20, 20);
+                lbl.AutoSize = true;
+
+                ComboBox cmb = new ComboBox();
+                cmb.DropDownStyle = ComboBoxStyle.DropDownList;
+                // Special entry for black & white (1-bit)
+                cmb.Items.Add(new ComboItem { Text = "2 (Black & White)", Value = 2 });
+                cmb.Items.AddRange(new object[] { 4, 8, 16, 32, 64, 256 });
+                cmb.SelectedIndex = 5; // 64 by default
+                cmb.Location = new Point(160, 18);
+                cmb.Width = 100;
+
+                Button okBtn = new Button();
+                okBtn.Text = "OK";
+                okBtn.DialogResult = DialogResult.OK;
+                okBtn.Location = new Point(100, 70);
+
+                dialog.Controls.Add(lbl);
+                dialog.Controls.Add(cmb);
+                dialog.Controls.Add(okBtn);
+
+                if (dialog.ShowDialog() != DialogResult.OK) return;
+
+                int targetColors = 0;
+                if (cmb.SelectedItem is ComboItem ci)
+                    targetColors = ci.Value;
+                else
+                    targetColors = (int)cmb.SelectedItem;
+
+                Cursor.Current = Cursors.WaitCursor;
+
+                try
+                {
+                    using (Bitmap srcBitmap = currentMat.ToBitmap())
+                    {
+                        int w = srcBitmap.Width;
+                        int h = srcBitmap.Height;
+
+                        if (targetColors == 2)
+                        {
+                            // --- Black & White (1-bit) using luminance threshold ---
+                            Bitmap destBitmap = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+                            System.Drawing.Imaging.BitmapData srcData = srcBitmap.LockBits(
+                                new Rectangle(0, 0, w, h),
+                                System.Drawing.Imaging.ImageLockMode.ReadOnly,
+                                System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+                            System.Drawing.Imaging.BitmapData dstData = destBitmap.LockBits(
+                                new Rectangle(0, 0, w, h),
+                                System.Drawing.Imaging.ImageLockMode.WriteOnly,
+                                System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+
+                            unsafe
+                            {
+                                byte* srcPtr = (byte*)srcData.Scan0;
+                                byte* dstPtr = (byte*)dstData.Scan0;
+                                int stride = srcData.Stride;
+
+                                // Calculate average luminance for threshold
+                                long totalLum = 0;
+                                for (int y = 0; y < h; y++)
+                                {
+                                    byte* row = srcPtr + y * stride;
+                                    for (int x = 0; x < w; x++)
+                                    {
+                                        byte b = row[x * 3];
+                                        byte g = row[x * 3 + 1];
+                                        byte r = row[x * 3 + 2];
+                                        totalLum += (r + g + b) / 3;
+                                    }
+                                }
+                                int threshold = (int)(totalLum / (w * h));
+
+                                // Convert each pixel to black or white
+                                for (int y = 0; y < h; y++)
+                                {
+                                    byte* srcRow = srcPtr + y * stride;
+                                    byte* dstRow = dstPtr + y * stride;
+                                    for (int x = 0; x < w; x++)
+                                    {
+                                        byte b = srcRow[x * 3];
+                                        byte g = srcRow[x * 3 + 1];
+                                        byte r = srcRow[x * 3 + 2];
+                                        int lum = (r + g + b) / 3;
+                                        byte val = lum > threshold ? (byte)255 : (byte)0;
+                                        dstRow[x * 3] = val;     // B
+                                        dstRow[x * 3 + 1] = val; // G
+                                        dstRow[x * 3 + 2] = val; // R
+                                    }
+                                }
+                            }
+                            srcBitmap.UnlockBits(srcData);
+                            destBitmap.UnlockBits(dstData);
+
+                            Mat newMat = destBitmap.ToMat();
+                            Mat oldMat = currentMat;
+                            currentMat = newMat.Clone();
+                            oldMat?.Dispose();
+                            destBitmap.Dispose();
+
+                            pictureBox1.Image = currentMat.ToBitmap();
+                            this.Text = $"PixelLab - {Path.GetFileName(currentFilePath)} [Black & White]";
+                        }
+                        else
+                        {
+                            // --- Uniform quantization for 4,8,16,32,64,256 ---
+                            int levels = (int)Math.Pow(targetColors, 1.0 / 3.0);
+                            if (levels < 2) levels = 2;
+                            if (levels > 8) levels = 8;
+                            int step = 256 / levels;
+                            if (step < 1) step = 1;
+
+                            Bitmap destBitmap = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+                            System.Drawing.Imaging.BitmapData srcData = srcBitmap.LockBits(
+                                new Rectangle(0, 0, w, h),
+                                System.Drawing.Imaging.ImageLockMode.ReadOnly,
+                                System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+                            System.Drawing.Imaging.BitmapData dstData = destBitmap.LockBits(
+                                new Rectangle(0, 0, w, h),
+                                System.Drawing.Imaging.ImageLockMode.WriteOnly,
+                                System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+
+                            unsafe
+                            {
+                                byte* srcPtr = (byte*)srcData.Scan0;
+                                byte* dstPtr = (byte*)dstData.Scan0;
+                                int stride = srcData.Stride;
+
+                                for (int y = 0; y < h; y++)
+                                {
+                                    byte* srcRow = srcPtr + y * stride;
+                                    byte* dstRow = dstPtr + y * stride;
+                                    for (int x = 0; x < w; x++)
+                                    {
+                                        byte b = srcRow[x * 3];
+                                        byte g = srcRow[x * 3 + 1];
+                                        byte r = srcRow[x * 3 + 2];
+                                        b = (byte)((b / step) * step);
+                                        g = (byte)((g / step) * step);
+                                        r = (byte)((r / step) * step);
+                                        dstRow[x * 3] = b;
+                                        dstRow[x * 3 + 1] = g;
+                                        dstRow[x * 3 + 2] = r;
+                                    }
+                                }
+                            }
+                            srcBitmap.UnlockBits(srcData);
+                            destBitmap.UnlockBits(dstData);
+
+                            Mat newMat = destBitmap.ToMat();
+                            Mat oldMat = currentMat;
+                            currentMat = newMat.Clone();
+                            oldMat?.Dispose();
+                            destBitmap.Dispose();
+
+                            pictureBox1.Image = currentMat.ToBitmap();
+                            this.Text = $"PixelLab - {Path.GetFileName(currentFilePath)} [Quantized: {targetColors} colors]";
+                        }
+
+                        // Reset workspace
+                        currentColorSpace = "RGB";
+                        channelPanel.Visible = false;
+                        originalChannels = null;
+                        originalCmyk = null;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Quantization error: {ex.Message}", "PixelLab");
+                }
+                finally
+                {
+                    Cursor.Current = Cursors.Default;
+                }
+            }
+        }
+        private void OpenImage()
+        {
+            using (OpenFileDialog ofd = new OpenFileDialog())
+            {
+                ofd.Filter = "Image Files|*.jpg;*.jpeg;*.png;*.bmp;*.gif|All Files|*.*";
+                ofd.Title = "Select an Image";
+                if (ofd.ShowDialog() == DialogResult.OK)
+                {
+                    LoadImage(ofd.FileName);
+                }
+            }
+        }
         private void ResetToOriginal()
         {
             if (originalMat == null) return;
@@ -759,5 +981,14 @@ namespace PixelLab
             originalCmyk = null;
             originalChannels = null;
         }
+
+        private class ComboItem
+        {
+            public string Text { get; set; }
+            public int Value { get; set; }
+            public override string ToString() => Text;
+        }
+
     }
+    
 }
