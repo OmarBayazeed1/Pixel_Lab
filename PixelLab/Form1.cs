@@ -9,6 +9,7 @@ using Emgu.CV.Util;
 using System.Runtime.InteropServices;
 using OpenTK.Graphics.OpenGL;
 using System.Collections.Generic;
+using System.Media;
 namespace PixelLab
 {
     public partial class Form1 : Form
@@ -124,33 +125,37 @@ namespace PixelLab
             topPanel.BackColor = Color.WhiteSmoke;
             topPanel.Padding = new Padding(5);
             topPanel.FlowDirection = FlowDirection.LeftToRight;
+            // ---------- Convert section (dropdown + button) ----------
+            Label convertLabel = new Label();
+            convertLabel.Text = "Convert to:";
+            convertLabel.Height = 40;
+            convertLabel.TextAlign = ContentAlignment.MiddleCenter;
+            topPanel.Controls.Add(convertLabel);
 
-            string[] spaces = { "RGB", "HSV", "LAB", "YUV", "YCbCr", "CMYK" };
-            foreach (string cs in spaces)
+            ComboBox cmbColorSpace = new ComboBox();
+            cmbColorSpace.DropDownStyle = ComboBoxStyle.DropDownList;
+            cmbColorSpace.Items.AddRange(new object[] { "RGB", "HSV", "LAB", "YUV", "YCbCr", "CMYK" });
+            cmbColorSpace.SelectedIndex = 0; // default RGB
+            cmbColorSpace.Width = 80;
+            cmbColorSpace.Height = 40;
+            topPanel.Controls.Add(cmbColorSpace);
+
+            Button convertBtn = new Button();
+            convertBtn.Text = "Convert";
+            convertBtn.Width = 80;
+            convertBtn.Height = 40;
+            convertBtn.BackColor = Color.LightBlue;
+            convertBtn.Click += (s, e) =>
             {
-                Button btn = new Button();
-                btn.Text = cs;
-                btn.Width = 80;
-                btn.Height = 40;
-                btn.Margin = new Padding(5);
-                btn.Click += (s, e) => ConvertToColorSpace(cs);
-                topPanel.Controls.Add(btn);
-            }
-            Button rgbCubeBtn = new Button { Text = "RGB Cube", Width = 80, Height = 40 };
-            rgbCubeBtn.Click += (s, e) => ShowRgbCube();
-            topPanel.Controls.Add(rgbCubeBtn);
+                string selected = cmbColorSpace.SelectedItem.ToString();
+                ConvertToColorSpace(selected);
+            };
+            topPanel.Controls.Add(convertBtn);
 
-            Button hsvBtn = new Button { Text = "HSV Cylinder", Width = 90, Height = 40 };
-            hsvBtn.Click += (s, e) => ShowHsvCylinder();
-            topPanel.Controls.Add(hsvBtn);
-
-            Button cmykBtn = new Button { Text = "CMYK Cube", Width = 90, Height = 40 };
-            cmykBtn.Click += (s, e) => ShowCmykCube();
-            topPanel.Controls.Add(cmykBtn);
-
-            Button map2DBtn = new Button { Text = "🎨 2D Map", Width = 80, Height = 40, BackColor = Color.LightSalmon };
-            map2DBtn.Click += (s, e) => Show2DMap();
-            topPanel.Controls.Add(map2DBtn);
+            // Separator
+            Label sep = new Label();
+            sep.Text = "     ";
+            topPanel.Controls.Add(sep);
 
             Button openBtn = new Button();
             openBtn.Text = "📂 Open";
@@ -183,6 +188,37 @@ namespace PixelLab
             quantizeBtn.BackColor = Color.LightBlue;
             quantizeBtn.Click += (s, e) => QuantizeImage();
             topPanel.Controls.Add(quantizeBtn);
+
+            Button map2DBtn = new Button();
+            map2DBtn.Text = "🎨 2D Map";
+            map2DBtn.Width = 80;
+            map2DBtn.Height = 40;
+            map2DBtn.BackColor = Color.LightSalmon;
+            map2DBtn.Click += (s, e) => Show2DMap();
+            topPanel.Controls.Add(map2DBtn);
+
+            Button cubeBtn = new Button();
+            cubeBtn.Text = "🎨 RGB Cube";
+            cubeBtn.Width = 80;
+            cubeBtn.Height = 40;
+            cubeBtn.BackColor = Color.LightPink;
+            cubeBtn.Click += (s, e) => ShowRgbCube();
+            topPanel.Controls.Add(cubeBtn);
+
+            Button cylinderBtn = new Button();
+            cylinderBtn.Text = "🎨 HSV Cylinder";
+            cylinderBtn.Width = 80;
+            cylinderBtn.Height = 40;
+            cylinderBtn.BackColor = Color.LightPink;
+            cylinderBtn.Click += (s, e) => ShowHsvCylinder();
+            topPanel.Controls.Add(cylinderBtn);
+            Button cmykBtn = new Button();
+            cmykBtn.Text = "🎨 CMYK Cube";
+            cmykBtn.Width = 80;
+            cmykBtn.Height = 40;
+            cmykBtn.BackColor = Color.LightPink;
+            cmykBtn.Click += (s, e) => ShowCmykCube();
+            topPanel.Controls.Add(cmykBtn);
 
             this.Controls.Add(topPanel);
         }
@@ -249,6 +285,9 @@ namespace PixelLab
             pictureBox1.Image = currentMat.ToBitmap();
             this.Text = $"PixelLab - {Path.GetFileName(currentFilePath)} [{targetSpace}]";
             currentColorSpace = targetSpace;
+
+            SystemSounds.Asterisk.Play();
+
 
             ExtractOriginalChannels(convertedMat, targetSpace);
             BuildChannelUI(targetSpace);
@@ -656,6 +695,8 @@ namespace PixelLab
             channelPanel.Visible = true;
             ApplyCmykAdjustment();
             this.Text = $"PixelLab - {Path.GetFileName(currentFilePath)} [CMYK]";
+            SystemSounds.Asterisk.Play();
+
         }
 
         private void BuildCmykUI()
