@@ -7,10 +7,13 @@ using Emgu.CV.CvEnum;
 using Emgu.CV.Structure;
 using Emgu.CV.Util;
 using System.Runtime.InteropServices;
+using OpenTK.Graphics.OpenGL;
+using System.Collections.Generic;
 namespace PixelLab
 {
     public partial class Form1 : Form
     {
+
         private Mat originalMat;
         private Mat currentMat;
         private string currentColorSpace;
@@ -36,6 +39,8 @@ namespace PixelLab
             SetupDragDrop();
             CreateTopPanel();
             CreateChannelPanel();
+
+            
         }
 
         private void InitializeForm()
@@ -99,6 +104,8 @@ namespace PixelLab
             }
         }
 
+        
+
         private void UpdateImageInfo()
         {
             if (currentFilePath == null) return;
@@ -129,6 +136,22 @@ namespace PixelLab
                 btn.Click += (s, e) => ConvertToColorSpace(cs);
                 topPanel.Controls.Add(btn);
             }
+            Button rgbCubeBtn = new Button { Text = "RGB Cube", Width = 80, Height = 40 };
+            rgbCubeBtn.Click += (s, e) => ShowRgbCube();
+            topPanel.Controls.Add(rgbCubeBtn);
+
+            Button hsvBtn = new Button { Text = "HSV Cylinder", Width = 90, Height = 40 };
+            hsvBtn.Click += (s, e) => ShowHsvCylinder();
+            topPanel.Controls.Add(hsvBtn);
+
+            Button cmykBtn = new Button { Text = "CMYK Cube", Width = 90, Height = 40 };
+            cmykBtn.Click += (s, e) => ShowCmykCube();
+            topPanel.Controls.Add(cmykBtn);
+
+            Button map2DBtn = new Button { Text = "🎨 2D Map", Width = 80, Height = 40, BackColor = Color.LightSalmon };
+            map2DBtn.Click += (s, e) => Show2DMap();
+            topPanel.Controls.Add(map2DBtn);
+
             Button openBtn = new Button();
             openBtn.Text = "📂 Open";
             openBtn.Width = 80;
@@ -765,7 +788,12 @@ namespace PixelLab
                 }
             }
         }
+        
 
+        private void Show2DMap()
+        {
+            new Form2D().Show();
+        }
         private void QuantizeImage()
         {
             if (currentMat == null || currentMat.IsEmpty)
@@ -989,6 +1017,112 @@ namespace PixelLab
             public override string ToString() => Text;
         }
 
+
+        public static class ColorSpaceGenerators
+        {
+            public static IEnumerable<ColorSpaceViewer.ColorPoint> GenerateRgbCube(int samplesPerAxis = 20)
+            {
+                float step = 1f / (samplesPerAxis - 1);
+                for (int r = 0; r < samplesPerAxis; r++)
+                    for (int g = 0; g < samplesPerAxis; g++)
+                        for (int b = 0; b < samplesPerAxis; b++)
+                        {
+                            float red = r * step;
+                            float green = g * step;
+                            float blue = b * step;
+                            float x = red - 0.5f;
+                            float y = green - 0.5f;
+                            float z = blue - 0.5f;
+                            yield return new ColorSpaceViewer.ColorPoint(x, y, z, red, green, blue);
+                        }
+            }
+
+            public static IEnumerable<ColorSpaceViewer.ColorPoint> GenerateHsvCylinder(int hueSteps = 60, int satSteps = 20, int valSteps = 10)
+            {
+                for (int h = 0; h < hueSteps; h++)
+                {
+                    double hue = h * 360.0 / hueSteps;
+                    for (int s = 0; s < satSteps; s++)
+                    {
+                        double sat = s / (double)(satSteps - 1);
+                        for (int v = 0; v < valSteps; v++)
+                        {
+                            double val = v / (double)(valSteps - 1);
+                            // Convert HSV to RGB
+                            double r = 0, g = 0, b = 0;
+                            int hi = (int)Math.Floor(hue / 60.0) % 6;
+                            double f = hue / 60.0 - Math.Floor(hue / 60.0);
+                            double p = val * (1 - sat);
+                            double q = val * (1 - f * sat);
+                            double t = val * (1 - (1 - f) * sat);
+                            switch (hi)
+                            {
+                                case 0: r = val; g = t; b = p; break;
+                                case 1: r = q; g = val; b = p; break;
+                                case 2: r = p; g = val; b = t; break;
+                                case 3: r = p; g = q; b = val; break;
+                                case 4: r = t; g = p; b = val; break;
+                                case 5: r = val; g = p; b = q; break;
+                            }
+                            // Position: X = saturation * cos(hueAngle), Y = value, Z = saturation * sin(hueAngle)
+                            float angleRad = (float)(hue * Math.PI / 180.0);
+                            float radius = (float)sat;
+                            float x = radius * (float)Math.Cos(angleRad);
+                            float z = radius * (float)Math.Sin(angleRad);
+                            float y = (float)val - 0.5f; // center vertically
+                            yield return new ColorSpaceViewer.ColorPoint(x, y, z, (float)r, (float)g, (float)b);
+                        }
+                    }
+                }
+            }
+
+            // Similarly generate LAB sphere, YUV cube, YCbCr prism, CMYK cube.
+            // For brevity, I'll show the pattern for one more: CMYK cube.
+            public static IEnumerable<ColorSpaceViewer.ColorPoint> GenerateCmykCube(int samplesPerAxis = 20)
+            {
+                float step = 1f / (samplesPerAxis - 1);
+                for (int c = 0; c < samplesPerAxis; c++)
+                    for (int m = 0; m < samplesPerAxis; m++)
+                        for (int y = 0; y < samplesPerAxis; y++)
+                        {
+                            float cyan = c * step;
+                            float magenta = m * step;
+                            float yellow = y * step;
+                            float black = 0; // we can also vary K but for 3D cube we fix K=0 to see C,M,Y axes
+                            double r = (1 - cyan) * (1 - black);
+                            double g = (1 - magenta) * (1 - black);
+                            double b = (1 - yellow) * (1 - black);
+                            // Position: X = cyan, Y = magenta, Z = yellow
+                            float x = cyan - 0.5f;
+                            float yp = magenta - 0.5f;
+                            float z = yellow - 0.5f;
+                            yield return new ColorSpaceViewer.ColorPoint(x, yp, z, (float)r, (float)g, (float)b);
+                        }
+            }
+        
+            
+        }
+        private void ShowRgbCube()
+        {
+            // Increase samples per axis from 20 to 40 → 64,000 points
+            var viewer = new ColorSpaceViewer("RGB Cube", () => ColorSpaceGenerators.GenerateRgbCube(60));
+            viewer.Show();
+        }
+
+        private void ShowHsvCylinder()
+        {
+            // Increase steps: Hue 120, Saturation 30, Value 15 → ~54,000 points
+            var viewer = new ColorSpaceViewer("HSV Cylinder", () => ColorSpaceGenerators.GenerateHsvCylinder(180, 40, 30));
+            viewer.Show();
+        }
+
+        private void ShowCmykCube()
+        {
+            // Increase samples per axis from 20 to 40 → 64,000 points
+            var viewer = new ColorSpaceViewer("CMYK Cube", () => ColorSpaceGenerators.GenerateCmykCube(60));
+            viewer.Show();
+        }// Add similar for LAB, YUV, YCbCr
+
     }
-    
+
 }
