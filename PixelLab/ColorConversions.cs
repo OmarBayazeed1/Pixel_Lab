@@ -1,5 +1,16 @@
 ﻿using System;
 
+using System.Drawing;
+using System.IO;
+using System.Windows.Forms;
+using Emgu.CV;
+using Emgu.CV.CvEnum;
+using Emgu.CV.Structure;
+using Emgu.CV.Util;
+using System.Runtime.InteropServices;
+using OpenTK.Graphics.OpenGL;
+using System.Collections.Generic;
+using System.Media;
 namespace PixelLab
 {
     public static class ColorConversions
@@ -57,7 +68,24 @@ namespace PixelLab
             m = (1 - g - k) / (1 - k);
             y = (1 - b - k) / (1 - k);
         }
+        public static Color LabToRgb(double L, double a, double b)
+        {
+            // Convert LAB to XYZ to RGB (simplified, using standard D65)
+            double y = (L + 16) / 116;
+            double x = y + a / 500;
+            double z = y - b / 200;
+            x = (x > 0.206893) ? Math.Pow(x, 3) : (x - 16.0 / 116) / 7.787;
+            y = (y > 0.206893) ? Math.Pow(y, 3) : (y - 16.0 / 116) / 7.787;
+            z = (z > 0.206893) ? Math.Pow(z, 3) : (z - 16.0 / 116) / 7.787;
+            double r = x * 3.2406 - y * 1.5372 - z * 0.4986;
+            double g = -x * 0.9689 + y * 1.8758 + z * 0.0415;
+            double bb = x * 0.0557 - y * 0.2040 + z * 1.0570;
+            double gamma(double c) => c <= 0.0031308 ? 12.92 * c : 1.055 * Math.Pow(c, 1 / 2.4) - 0.055;
+            r = gamma(Math.Max(0, Math.Min(1, r)));
+            g = gamma(Math.Max(0, Math.Min(1, g)));
+            b = gamma(Math.Max(0, Math.Min(1, bb)));
+            return Color.FromArgb((int)(r * 255), (int)(g * 255), (int)(b * 255));
+        }
 
-        
     }
 }

@@ -33,7 +33,7 @@ namespace PixelLab
         private string[] channelNames;
         private int[] channelMaxValues;
         private Button resetChannelsBtn;
-
+        private ContextMenuStrip menu3D;
         public Form1()
         {
             InitializeForm();
@@ -154,7 +154,7 @@ namespace PixelLab
 
             // Separator
             Label sep = new Label();
-            sep.Text = "     ";
+            sep.Text = "  ";
             topPanel.Controls.Add(sep);
 
             Button openBtn = new Button();
@@ -197,28 +197,19 @@ namespace PixelLab
             map2DBtn.Click += (s, e) => Show2DMap();
             topPanel.Controls.Add(map2DBtn);
 
-            Button cubeBtn = new Button();
-            cubeBtn.Text = "🎨 RGB Cube";
-            cubeBtn.Width = 80;
-            cubeBtn.Height = 40;
-            cubeBtn.BackColor = Color.LightPink;
-            cubeBtn.Click += (s, e) => ShowRgbCube();
-            topPanel.Controls.Add(cubeBtn);
-
-            Button cylinderBtn = new Button();
-            cylinderBtn.Text = "🎨 HSV Cylinder";
-            cylinderBtn.Width = 80;
-            cylinderBtn.Height = 40;
-            cylinderBtn.BackColor = Color.LightPink;
-            cylinderBtn.Click += (s, e) => ShowHsvCylinder();
-            topPanel.Controls.Add(cylinderBtn);
-            Button cmykBtn = new Button();
-            cmykBtn.Text = "🎨 CMYK Cube";
-            cmykBtn.Width = 80;
-            cmykBtn.Height = 40;
-            cmykBtn.BackColor = Color.LightPink;
-            cmykBtn.Click += (s, e) => ShowCmykCube();
-            topPanel.Controls.Add(cmykBtn);
+            Button btn3D = new Button();
+            btn3D.Text = "3D";
+            btn3D.Width = 60;
+            btn3D.Height = 40;
+            btn3D.BackColor = Color.LightPink;
+            menu3D = new ContextMenuStrip();
+            menu3D.Items.Add("RGB Cube", null, (s, e) => ShowRgbCube());
+            menu3D.Items.Add("HSV Cylinder", null, (s, e) => ShowHsvCylinder());
+            menu3D.Items.Add("CMYK Cube", null, (s, e) => ShowCmykCube());
+            menu3D.Items.Add("LAB Sphere", null, (s, e) => ShowLabSphere());
+            btn3D.Click += (s, e) => menu3D.Show(btn3D, new Point(0, btn3D.Height));
+            topPanel.Controls.Add(btn3D);
+            
 
             this.Controls.Add(topPanel);
         }
@@ -1140,8 +1131,44 @@ namespace PixelLab
                             yield return new ColorSpaceViewer.ColorPoint(x, yp, z, (float)r, (float)g, (float)b);
                         }
             }
-        
-            
+            public static IEnumerable<ColorSpaceViewer.ColorPoint> GenerateLabSphere(int samples = 50)
+            {
+                // Map sphere coordinates: radius = 1 (for sphere shape), but LAB space is not a sphere.
+                // We'll create a sphere with color defined by LAB values that lie within the spherical volume.
+                // Actually, LAB gamut is not a perfect sphere, but for visualization we map:
+                // - X = a/128 (range -1..1)
+                // - Y = L/50 - 1 (so L=0 at bottom, L=100 at top)
+                // - Z = b/128 (range -1..1)
+                // Then color = LabToRgb(L, a, b)
+                int steps = samples;
+                float step = 1f / steps;
+                for (int i = 0; i <= steps; i++)
+                {
+                    float t = i * step; // parameter 0..1
+                                        // L from 0 to 100
+                    double L = t * 100;
+                    // For each L, we sample a circle of a,b values within the approximate LAB gamut at that L
+                    // Simplified: a,b range -128..127, but we clip to a circle of radius max at mid-L
+                    double radius = Math.Sin(Math.PI * t) * 128; // max radius at L=50
+                    int angleSteps = 60;
+                    for (int aStep = 0; aStep < angleSteps; aStep++)
+                    {
+                        double angle = aStep * 2 * Math.PI / angleSteps;
+                        double a = radius * Math.Cos(angle);
+                        double b = radius * Math.Sin(angle);
+                        // Clamp a,b to -128..127
+                        a = Math.Max(-128, Math.Min(127, a));
+                        b = Math.Max(-128, Math.Min(127, b));
+                        Color color = ColorConversions.LabToRgb(L, a, b);
+                        // Convert to sphere coordinates: x = a/128, y = L/50 - 1, z = b/128
+                        float x = (float)(a / 128.0);
+                        float y = (float)(L / 50.0 - 1.0);
+                        float z = (float)(b / 128.0);
+                        yield return new ColorSpaceViewer.ColorPoint(x, y, z, color.R / 255f, color.G / 255f, color.B / 255f);
+                    }
+                }
+            }
+
         }
         private void ShowRgbCube()
         {
@@ -1162,8 +1189,12 @@ namespace PixelLab
             // Increase samples per axis from 20 to 40 → 64,000 points
             var viewer = new ColorSpaceViewer("CMYK Cube", () => ColorSpaceGenerators.GenerateCmykCube(60));
             viewer.Show();
-        }// Add similar for LAB, YUV, YCbCr
-
+        }
+        private void ShowLabSphere()
+        {
+            var viewer = new ColorSpaceViewer("LAB Color Sphere", () => ColorSpaceGenerators.GenerateLabSphere(50));
+            viewer.Show();
+        }
     }
 
 }
